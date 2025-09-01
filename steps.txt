@@ -1,0 +1,183 @@
+Step 2 — Implement baseline schedulers
+
+Create simple baselines to compare against: Round-Robin, Min-Min, HEFT-like (simplified). Put them under src/simulator/schedulers.py. Example: Round-Robin and Shortest Expected Runtime.
+
+These will be used to compare later.
+
+Step 3 — Instrumentation & metrics collection
+
+Add a metrics collector (simple CSV/JSON logger) that stores task start/finish, energy, cost (if cost rate provided), deadline misses.
+
+File: src/utils/metrics.py — functions to compute L_lat, L_energy, L_cost, L_sla from the record.
+
+Use that to log experiment outcomes.
+
+Step 4 — Build a Gymnasium environment (wrap simulator for RL)
+
+Create a gymnasium.Env that at each step exposes a state (ready tasks + node states) and accepts actions (assign task i -> node j). Put in src/envs/sage_env.py.
+
+Skeleton:
+
+import gymnasium as gym
+from gymnasium import spaces
+import numpy as np
+
+class SageEnv(gym.Env):
+    def __init__(self, sim_builder, max_tasks=20, num_nodes=2):
+        super().__init__()
+        self.sim_builder = sim_builder  # function to produce simulator instance
+        # define observation and action spaces (simple fixed-size)
+        self.observation_space = spaces.Box(low=0, high=1, shape=(max_tasks+num_nodes,), dtype=np.float32)
+        self.action_space = spaces.Discrete(max_tasks * num_nodes)  # map idx -> (task,node)
+    def reset(self):
+        self.sim = self.sim_builder()
+        # build initial obs
+        return self._get_obs(), {}
+    def step(self, action):
+        task_idx = action // self.num_nodes
+        node_idx = action % self.num_nodes
+        # apply action: scheduler assigns task to node in sim
+        reward = -1.0  # placeholder: compute negative objective delta
+        done = False
+        info = {}
+        return self._get_obs(), reward, done, False, info
+    def _get_obs(self):
+        # TODO: build observation vector
+        return np.zeros(self.observation_space.shape, dtype=np.float32)
+
+
+You’ll refine obs/action shapes as you iterate. The key is to have a working env to plug into SB3.
+
+Step 5 — RL agent scaffolding (PPO)
+
+Install stable-baselines3 and create a training script src/agents/train_ppo.py:
+
+from stable_baselines3 import PPO
+from stable_baselines3.common.env_util import make_vec_env
+from envs.sage_env import SageEnv
+
+def make_env():
+    return SageEnv(sim_builder=your_sim_builder)
+
+if __name__ == '__main__':
+    env = make_vec_env(make_env, n_envs=4)
+    model = PPO('MlpPolicy', env, verbose=1)
+    model.learn(total_timesteps=10000)
+    model.save("ppo_sage")
+
+
+Start with a small total_timesteps just to validate the loop.
+
+Step 6 — Digital Twin (DT) predictor
+
+DT maps (task features, node features) → predicted runtime and uncertainty.
+
+Quick skeleton using scikit-learn:
+
+# src/dt/predictor.py
+from sklearn.ensemble import GradientBoostingRegressor
+import numpy as np
+import joblib
+
+class DTPredictor:
+    def __init__(self):
+        self.model = GradientBoostingRegressor()
+    def featurize(self, task, node):
+        return np.array([task.work, node.speed, node.power, task.affinity_val])
+    def fit(self, X, y):
+        self.model.fit(X, y)
+    def predict(self, X):
+        return self.model.predict(X)
+
+
+Collect training data from early simulator runs (task.work, node.speed) → observed runtime, then fit. Later replace with a PyTorch MLP that can output quantiles or use QuantileRegressor for uncertainty.
+
+Step 7 — Integrate DT into agent decision loop (look-ahead)
+
+Modify your Gym env or the agent wrapper to:
+
+Ask policy for top-K candidate actions (you can sample actions and score them).
+
+For each candidate, call DT to simulate short-horizon outcomes (runtime, energy).
+
+Use Pareto filtering & scalarization to pick final action.
+
+Execute that action in the simulator.
+
+This makes the agent actor-proposer + DT evaluator.
+
+Step 8 — Explainability layer
+
+While training/after action selection, capture the features that influenced the decision. Options:
+
+Train a small surrogate decision tree on (features -> chosen node) to produce human-readable rules.
+
+Use SHAP on the critic/value network inputs to get feature contributions.
+
+Minimal approach: log input features and DT predicted deltas for chosen vs. alternative assignments; present as a small JSON {"task":id,"chosen":"gpu","why":["expected -42ms","energy -0.3J"]}.
+
+Step 9 — Experiments & evaluation harness
+
+Create scripts/run_experiment.py which:
+
+Runs N episodes for baseline schedulers and SAGE.
+
+Saves metrics CSVs per run.
+
+Generates plots: latency CDF, energy total, SLA miss rate.
+
+Use matplotlib to visualize and pandas to aggregate.
+
+Step 10 — Real-time / near-real testing (shadow mode)
+
+When the simulator is stable, move to a real-time testbed:
+
+Options:
+A. Local heterogeneous nodes:
+
+Host machine (CPU) + one GPU (if available).
+
+Use Docker to run worker containers that accept a job via REST and execute a workload script (CPU: python compute.py, GPU: python gpu_infer.py).
+B. Kubernetes (minikube):
+
+Deploy a small cluster, create a custom scheduler component (or a controller) that calls SAGE via REST API to allocate pods to nodeSelectors.
+
+Run SAGE in “shadow” mode at first: it suggests allocations while Kubernetes uses default scheduler. Compare suggested vs actual.
+
+Implementation steps for a simple real-time test:
+
+Create a lightweight worker service:
+
+worker.py accepts job request (POST /run) with job params and executes a synthetic work loop simulating work (use time.sleep(exec_time) or actual compute).
+
+Expose SAGE as scheduler_api.py (Flask) which receives a job, calls policy+DT, returns chosen worker URL and also logs.
+
+Submit jobs to scheduler API and measure real start/finish times.
+
+Step 11 — Monitoring & dashboards
+
+Add simple monitoring:
+
+Use Prometheus client in worker.py to expose metrics (task_latency_seconds, energy_estimate_joules).
+
+Use Grafana (optional) for real-time dashboards.
+
+Start simple: log CSVs and plot.
+
+Step 12 — Tests & CI
+
+Add unit tests (pytest) for simulator components, DT predictor, scheduler wrappers.
+
+Add .github/workflows/python-app.yml later to run tests on push.
+
+Step 13 — Documentation and checkpoints
+
+Maintain docs/ with:
+
+design.md (architecture)
+
+howto_run.md (run sim, train RL, run real-time)
+
+Commit frequently, with small PR-style branches:
+
+feature/simulator, feature/env, feature/ppo, feature/dt, feature/realtest
