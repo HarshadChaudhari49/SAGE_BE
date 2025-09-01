@@ -1,0 +1,12 @@
+numpy
+pandas
+simpy
+gymnasium
+stable-baselines3[extra]
+torch
+scikit-learn
+matplotlib
+shap
+flask
+requests
+pytest
