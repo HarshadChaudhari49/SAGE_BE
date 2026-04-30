@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAGE — Real-Time Scheduler Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <style>
+        /* ── Reset & Base ──────────────────────────────────── */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg: #0f1117;
+            --surface: #1a1d27;
+            --surface2: #22263a;
+            --border: #2d3250;
+            --text: #e4e6f0;
+            --text-dim: #8b8fa3;
+            --accent: #6c5ce7;
+            --accent2: #00cec9;
+            --green: #00b894;
+            --red: #e17055;
+            --yellow: #fdcb6e;
+            --blue: #74b9ff;
+            --pink: #fd79a8;
+            --orange: #e17055;
+        }
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+            overflow-x: hidden;
+        }
+
+        /* ── Header ────────────────────────────────────────── */
+        .header {
+            background: linear-gradient(135deg, var(--surface) 0%, var(--surface2) 100%);
+            border-bottom: 1px solid var(--border);
+            padding: 16px 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .header-left { display: flex; align-items: center; gap: 16px; }
+        .header h1 { font-size: 22px; font-weight: 700; }
+        .header h1 span { color: var(--accent); }
+        .status-badge {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;
+            background: rgba(0, 184, 148, 0.15); color: var(--green); border: 1px solid rgba(0,184,148,0.3);
+        }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+        .controls { display: flex; align-items: center; gap: 12px; }
+        .speed-control { display: flex; align-items: center; gap: 8px; }
+
+            -webkit-appearance: none; width: 100px; height: 4px;
+            background: var(--border); border-radius: 2px; outline: none;
+        }
+        .speed-slider::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 16px; height: 16px;
+            border-radius: 50%; background: var(--accent); cursor: pointer;
+        }
+        .speed-val { font-size: 13px; color: var(--accent); font-weight: 600; min-width: 30px; }
+
+        /* ── Layout ────────────────────────────────────────── */
+        .dashboard { padding: 20px 24px; display: flex; flex-direction: column; gap: 20px; }
+
+        /* ── KPI Cards ─────────────────────────────────────── */
+        .kpi-row {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px;
+        }
+        .kpi-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px 20px;
+            position: relative;
+            overflow: hidden;
+        }
+        .kpi-card::before {
+            content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+        }
+        .kpi-card:nth-child(1)::before { background: var(--accent); }
+        .kpi-card:nth-child(2)::before { background: var(--accent2); }
+        .kpi-card:nth-child(3)::before { background: var(--yellow); }
+        .kpi-card:nth-child(4)::before { background: var(--green); }
+        .kpi-card:nth-child(5)::before { background: var(--red); }
+        .kpi-card:nth-child(6)::before { background: var(--blue); }
+        .kpi-card:nth-child(7)::before { background: var(--orange); }
+        .kpi-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 6px; }
+        .kpi-value { font-size: 28px; font-weight: 700; }
+        .kpi-unit { font-size: 13px; color: var(--text-dim); font-weight: 400; }
+
+        /* ── Grids ─────────────────────────────────────────── */
+        .charts-grid {
+            display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;
+        }
+        @media (max-width: 1400px) {
+            .charts-grid { grid-template-columns: 1fr 1fr; }
+        }
+        .bottom-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+        }
+        @media (max-width: 1100px) {
+            .charts-grid, .bottom-grid { grid-template-columns: 1fr; }
+        }
+
+        /* ── Panel ─────────────────────────────────────────── */
+        .panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .panel-header {
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .panel-title { font-size: 14px; font-weight: 600; }
+        .panel-body { padding: 16px 20px; }
+        .chart-container { position: relative; height: 220px; }
+
+        /* ── Resource Cards ────────────────────────────────── */
+        .resources-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+        .resource-card {
+            background: var(--surface2); border: 1px solid var(--border);
+            border-radius: 10px; padding: 16px;
+        }
+        .resource-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+        .resource-name { font-weight: 600; font-size: 15px; }
+        .resource-type {
+            font-size: 11px; padding: 2px 10px; border-radius: 10px;
+            font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .type-cpu  { background: rgba(116,185,255,0.15); color: var(--blue); }
+        .type-gpu  { background: rgba(108,92,231,0.15); color: var(--accent); }
+        .type-edge { background: rgba(0,206,201,0.15); color: var(--accent2); }
+
+        .resource-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .resource-stat { }
+        .resource-stat-label { font-size: 11px; color: var(--text-dim); }
+        .resource-stat-value { font-size: 16px; font-weight: 600; }
+
+        .load-bar-bg { width: 100%; height: 6px; background: var(--border); border-radius: 3px; margin-top: 12px; }
+        .load-bar {
+            height: 100%; border-radius: 3px; transition: width 0.5s ease;
+            background: linear-gradient(90deg, var(--green), var(--yellow), var(--red));
+        }
+        .load-label { font-size: 11px; color: var(--text-dim); margin-top: 4px; display: flex; justify-content: space-between; }
+
+        /* ── Task Feed ─────────────────────────────────────── */
+        .task-feed { max-height: 420px; overflow-y: auto; }
+        .task-feed::-webkit-scrollbar { width: 5px; }
+        .task-feed::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+        .task-entry {
+            padding: 10px 14px; border-bottom: 1px solid rgba(45,50,80,0.5);
+            animation: slideIn 0.3s ease;
+        }
+        .task-entry:hover { background: rgba(108,92,231,0.05); }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+
+        .task-row-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+        .task-id { font-weight: 600; font-size: 13px; color: var(--accent); }
+        .task-time { font-size: 11px; color: var(--text-dim); }
+        .task-row-mid { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 4px; }
+        .task-tag {
+            font-size: 11px; padding: 2px 8px; border-radius: 4px;
+            background: var(--surface2); color: var(--text-dim);
+        }
+        .sla-ok { color: var(--green); }
+        .sla-miss { color: var(--red); font-weight: 600; }
+        .task-explain { font-size: 11px; color: var(--text-dim); font-style: italic; margin-top: 2px; }
+
+        /* ── Explanation Panel ─────────────────────────────── */
+        .explanation-panel {
+            background: var(--surface2); border: 1px solid var(--border);
+            border-radius: 8px; padding: 14px; margin-top: 12px;
+        }
+        .explain-title { font-size: 13px; font-weight: 600; margin-bottom: 8px; color: var(--accent); }
+        .explain-reason { font-size: 12px; color: var(--text-dim); margin-bottom: 4px; padding-left: 12px; border-left: 2px solid var(--accent); }
+        .last-explanation { min-height: 60px; }
+
+        /* ── Pause Button ──────────────────────────────────── */
+        .btn {
+            padding: 6px 16px; border-radius: 8px; border: none; cursor: pointer;
+            font-size: 13px; font-weight: 600; transition: opacity 0.2s;
+        }
+        .btn:hover { opacity: 0.85; }
+        .btn-pause { background: rgba(108,92,231,0.2); color: var(--accent); border: 1px solid rgba(108,92,231,0.4); }
+        .btn-pause.paused { background: rgba(0,184,148,0.2); color: var(--green); border: 1px solid rgba(0,184,148,0.4); }
+
+        /* ── Episode Toast ─────────────────────────────────── */
+        #episodeToast {
+            position: fixed; bottom: 24px; right: 24px; z-index: 999;
+            background: var(--surface2); border: 1px solid var(--border);
+            border-radius: 10px; padding: 12px 20px; font-size: 13px;
+            color: var(--text); opacity: 0; pointer-events: none;
+            transition: opacity 0.4s ease;
+        }
+        #episodeToast.show { opacity: 1; }
+    </style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────────── -->
+<div class="header">
+    <div class="header-left">
+        <h1>🧠 <span>SAGE</span> Scheduler Dashboard</h1>
+        <div class="status-badge">
+            <div class="status-dot"></div>
+            <span>LIVE</span>
+        </div>
+    </div>
+    <div class="controls">
+        <div class="speed-control">
+            <label>Speed:</label>
+            <input type="range" class="speed-slider" id="speedSlider" min="0.5" max="10" step="0.5" value="1">
+            <span class="speed-val" id="speedVal">1x</span>
+        </div>
+        <button class="btn btn-pause" id="pauseBtn">⏸ Pause</button>
+    </div>
+</div>
+<div id="episodeToast"></div>
+
+<!-- ── Dashboard ───────────────────────────────────────────── -->
+<div class="dashboard">
+
+    <!-- KPI Row -->
+    <div class="kpi-row">
+        <div class="kpi-card">
+            <div class="kpi-label">Total Tasks Scheduled</div>
+            <div class="kpi-value" id="kpi-total">0</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Episodes</div>
+            <div class="kpi-value" id="kpi-episodes">0</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Avg Latency</div>
+            <div class="kpi-value" id="kpi-latency">0<span class="kpi-unit">s</span></div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Avg Energy</div>
+            <div class="kpi-value" id="kpi-energy">0<span class="kpi-unit">J</span></div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Avg Cost</div>
+            <div class="kpi-value" id="kpi-cost">$<span id="kpi-cost-val">0</span></div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">SLA Miss Rate</div>
+            <div class="kpi-value" id="kpi-sla">0<span class="kpi-unit">%</span></div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Throughput</div>
+            <div class="kpi-value" id="kpi-throughput">0<span class="kpi-unit"> t/s</span></div>
+        </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="charts-grid">
+        <div class="panel">
+            <div class="panel-header"><span class="panel-title">📈 Latency Over Time</span></div>
+            <div class="panel-body"><div class="chart-container"><canvas id="latencyChart"></canvas></div></div>
+        </div>
+        <div class="panel">
+            <div class="panel-header"><span class="panel-title">⚡ Energy Over Time</span></div>
+            <div class="panel-body"><div class="chart-container"><canvas id="energyChart"></canvas></div></div>
+        </div>
+        <div class="panel">
+            <div class="panel-header"><span class="panel-title">� Cost Over Time</span></div>
+            <div class="panel-body"><div class="chart-container"><canvas id="costChart"></canvas></div></div>
+        </div>
+        <div class="panel">
+            <div class="panel-header"><span class="panel-title">🚀 Throughput (tasks/s)</span></div>
+            <div class="panel-body"><div class="chart-container"><canvas id="throughputChart"></canvas></div></div>
+        </div>
+        <div class="panel">
+            <div class="panel-header"><span class="panel-title">�🖥️ Resource Load Distribution</span></div>
+            <div class="panel-body"><div class="chart-container"><canvas id="resourceChart"></canvas></div></div>
+        </div>
+        <div class="panel">
+            <div class="panel-header"><span class="panel-title">🎯 SLA Compliance (rolling)</span></div>
+            <div class="panel-body"><div class="chart-container"><canvas id="slaChart"></canvas></div></div>
+        </div>
+    </div>
+
+    <!-- Resources + Task Feed -->
+    <div class="bottom-grid">
+        <!-- Resource Cards -->
+        <div class="panel">
+            <div class="panel-header"><span class="panel-title">🖥️ Compute Resources</span></div>
+            <div class="panel-body">
+                <div class="resources-grid" id="resourceCards">
+                    {% for r in resources %}
+                    <div class="resource-card" id="res-{{ r.id | replace(' ', '-') }}">
+                        <div class="resource-card-header">
+                            <span class="resource-name">{{ r.id }}</span>
+                            <span class="resource-type type-{{ r.type | lower }}">{{ r.type }}</span>
+                        </div>
+                        <div class="resource-stats">
+                            <div class="resource-stat">
+                                <div class="resource-stat-label">Tasks</div>
+                                <div class="resource-stat-value" data-res="{{ r.id }}" data-field="tasks_handled">0</div>
+                            </div>
+                            <div class="resource-stat">
+                                <div class="resource-stat-label">Avg Latency</div>
+                                <div class="resource-stat-value" data-res="{{ r.id }}" data-field="avg_latency">0s</div>
+                            </div>
+                            <div class="resource-stat">
+                                <div class="resource-stat-label">SLA Misses</div>
+                                <div class="resource-stat-value" data-res="{{ r.id }}" data-field="sla_misses">0</div>
+                            </div>
+                            <div class="resource-stat">
+                                <div class="resource-stat-label">Total Energy</div>
+                                <div class="resource-stat-value" data-res="{{ r.id }}" data-field="total_energy">0J</div>
+                            </div>
+                        </div>
+                        <div class="load-bar-bg">
+                            <div class="load-bar" data-res="{{ r.id }}" data-field="load_bar" style="width: 0%"></div>
+                        </div>
+                        <div class="load-label">
+                            <span>Load</span>
+                            <span data-res="{{ r.id }}" data-field="load_pct">0%</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <!-- Last Explanation -->
+                <div class="explanation-panel">
+                    <div class="explain-title">🧠 Last SAGE Explanation</div>
+                    <div class="last-explanation" id="lastExplanation">
+                        <div class="explain-reason">Waiting for first scheduling decision...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Live Task Feed -->
+        <div class="panel">
+            <div class="panel-header">
+                <span class="panel-title">📋 Live Task Feed</span>
+                <span style="font-size:12px; color:var(--text-dim)" id="feedCount">0 tasks</span>
+            </div>
+            <div class="panel-body">
+                <div class="task-feed" id="taskFeed">
+                    <div class="task-entry" style="text-align:center; color:var(--text-dim); padding: 40px">
+                        Waiting for tasks...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<script>
+// ── Chart Setup ───────────────────────────────────────────────
+const chartDefaults = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 300 },
+    scales: {
+        x: { display: true, grid: { color: 'rgba(45,50,80,0.3)' }, ticks: { color: '#8b8fa3', font: { size: 10 } } },
+        y: { display: true, grid: { color: 'rgba(45,50,80,0.3)' }, ticks: { color: '#8b8fa3', font: { size: 10 } } },
+    },
+    plugins: { legend: { display: false } },
+};
+
+function makeChart(id, label, color, yLabel) {
+    return new Chart(document.getElementById(id), {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: label,
+                data: [],
+                borderColor: color,
+                backgroundColor: color + '20',
+                fill: true,
+                tension: 0.3,
+                pointRadius: 0,
+                borderWidth: 2,
+            }]
+        },
+        options: {
+            ...chartDefaults,
+            scales: {
+                ...chartDefaults.scales,
+                y: { ...chartDefaults.scales.y, title: { display: true, text: yLabel, color: '#8b8fa3', font: { size: 11 } } }
+            }
+        }
+    });
+}
+
+const latencyChart    = makeChart('latencyChart',    'Latency',    '#6c5ce7', 'seconds');
+const energyChart     = makeChart('energyChart',     'Energy',     '#fdcb6e', 'joules');
+const costChart       = makeChart('costChart',       'Cost',       '#fd79a8', '$');
+const throughputChart = makeChart('throughputChart', 'Throughput', '#00cec9', 'tasks/s');
+
+// SLA chart (bar)
+const slaChart = new Chart(document.getElementById('slaChart'), {
+    type: 'bar',
+    data: { labels: [], datasets: [{
+        label: 'SLA Miss',
+        data: [],
+        backgroundColor: [],
+        borderWidth: 0,
+        barPercentage: 1.0,
+        categoryPercentage: 1.0,
+    }]},
+    options: {
+        ...chartDefaults,
+        scales: {
+            ...chartDefaults.scales,
+            y: { ...chartDefaults.scales.y, min: 0, max: 1, ticks: { stepSize: 1, callback: v => v ? '❌' : '✅', color: '#8b8fa3' } }
+        }
+    }
+});
+
+// Resource load chart (bar)
+const resColors = ['#74b9ff', '#6c5ce7', '#00cec9', '#fd79a8'];
+const resourceChart = new Chart(document.getElementById('resourceChart'), {
+    type: 'bar',
+    data: {
+        labels: [{% for r in resources %}'{{ r.id }}',{% endfor %}],
+        datasets: [{
+            label: 'Current Load',
+            data: [{% for r in resources %}0,{% endfor %}],
+            backgroundColor: resColors.slice(0, {{ resources|length }}),
+            borderWidth: 0,
+            borderRadius: 6,
+        }]
+    },
+    options: {
+        ...chartDefaults,
+        indexAxis: 'y',
+        scales: {
+            x: { ...chartDefaults.scales.x, title: { display: true, text: 'Load (time units)', color: '#8b8fa3', font: { size: 11 } } },
+            y: { ...chartDefaults.scales.y },
+        },
+    }
+});
+
+const resourceIds = [{% for r in resources %}'{{ r.id }}',{% endfor %}];
+
+// ── SSE Connection ────────────────────────────────────────────
+let taskCount = 0;
+const MAX_CHART_POINTS = 100;
+
+const evtSource = new EventSource('/api/stream');
+
+evtSource.addEventListener('task_scheduled', (e) => {
+    const d = JSON.parse(e.data);
+    taskCount++;
+    addTaskToFeed(d);
+    updateCharts(d);
+    updateExplanation(d);
+});
+
+evtSource.addEventListener('metrics_update', (e) => {
+    const m = JSON.parse(e.data);
+    updateKPIs(m);
+});
+
+evtSource.addEventListener('resource_update', (e) => {
+    const rs = JSON.parse(e.data);
+    updateResources(rs);
+});
+
+evtSource.addEventListener('episode_start', (e) => {
+    const d = JSON.parse(e.data);
+    showToast(`🔄 Episode ${d.episode} started`);
+});
+
+evtSource.addEventListener('episode_end', (e) => {
+    const d = JSON.parse(e.data);
+    const missRate = d.sla_miss_rate !== undefined ? (d.sla_miss_rate * 100).toFixed(1) + '%' : '?';
+    showToast(
+        `✅ Episode ${d.episode} done — ` +
+        `${d.num_tasks} tasks | ` +
+        `Avg Lat: ${d.avg_latency !== undefined ? d.avg_latency.toFixed(2) : '?'}s | ` +
+        `SLA miss: ${missRate}`
+    );
+});
+
+evtSource.onerror = () => {
+    document.querySelector('.status-badge').style.cssText = 'background:rgba(225,112,85,0.15);color:#e17055;border:1px solid rgba(225,112,85,0.3);';
+    document.querySelector('.status-dot').style.background = '#e17055';
+    document.querySelector('.status-badge span').textContent = 'DISCONNECTED';
+};
+
+// ── Update Functions ──────────────────────────────────────────
+function updateKPIs(m) {
+    _lastMetrics = m;
+    document.getElementById('kpi-total').textContent = m.total_tasks;
+    document.getElementById('kpi-episodes').textContent = m.total_episodes;
+    document.getElementById('kpi-latency').innerHTML = m.avg_latency + '<span class="kpi-unit">s</span>';
+    document.getElementById('kpi-energy').innerHTML = m.avg_energy + '<span class="kpi-unit">J</span>';
+    document.getElementById('kpi-cost').innerHTML = '$<span>' + m.avg_cost + '</span>';
+    document.getElementById('kpi-sla').innerHTML = m.sla_miss_rate + '<span class="kpi-unit">%</span>';
+    document.getElementById('kpi-throughput').innerHTML = m.throughput + '<span class="kpi-unit"> t/s</span>';
+}
+
+let _lastMetrics = null;
+
+function updateCharts(d) {
+    pushChartData(latencyChart,    d.task_id, d.latency);
+    pushChartData(energyChart,     d.task_id, d.energy);
+    pushChartData(costChart,       d.task_id, d.cost);
+    if (_lastMetrics) pushChartData(throughputChart, d.task_id, _lastMetrics.throughput);
+    // SLA bar
+    slaChart.data.labels.push(d.task_id);
+    slaChart.data.datasets[0].data.push(d.sla_miss ? 1 : 0);
+    slaChart.data.datasets[0].backgroundColor.push(d.sla_miss ? '#e17055' : '#00b89440');
+    if (slaChart.data.labels.length > MAX_CHART_POINTS) {
+        slaChart.data.labels.shift();
+        slaChart.data.datasets[0].data.shift();
+        slaChart.data.datasets[0].backgroundColor.shift();
+    }
+    slaChart.update('none');
+}
+
+function pushChartData(chart, label, value) {
+    chart.data.labels.push(label);
+    chart.data.datasets[0].data.push(value);
+    if (chart.data.labels.length > MAX_CHART_POINTS) {
+        chart.data.labels.shift();
+        chart.data.datasets[0].data.shift();
+    }
+    chart.update('none');
+}
+
+function updateResources(rs) {
+    let maxLoad = 1;
+    for (const id of resourceIds) {
+        if (rs[id] && rs[id].current_load > maxLoad) maxLoad = rs[id].current_load;
+    }
+
+    const barData = [];
+    for (const id of resourceIds) {
+        const r = rs[id];
+        if (!r) { barData.push(0); continue; }
+        barData.push(r.current_load);
+
+        // Update card stats
+        const setField = (field, val) => {
+            const el = document.querySelector(`[data-res="${id}"][data-field="${field}"]`);
+            if (el) {
+                if (field === 'load_bar') el.style.width = val;
+                else el.textContent = val;
+            }
+        };
+        setField('tasks_handled', r.tasks_handled);
+        setField('avg_latency', (r.tasks_handled > 0 ? (r.total_latency / r.tasks_handled).toFixed(1) : 0) + 's');
+        setField('sla_misses', r.sla_misses);
+        setField('total_energy', Math.round(r.total_energy) + 'J');
+        const loadPct = Math.min(100, Math.round(r.current_load / maxLoad * 100));
+        setField('load_bar', loadPct + '%');
+        setField('load_pct', loadPct + '%');
+    }
+    resourceChart.data.datasets[0].data = barData;
+    resourceChart.update('none');
+}
+
+function addTaskToFeed(d) {
+    const feed = document.getElementById('taskFeed');
+    // Remove "waiting" message on first task
+    if (taskCount === 1) feed.innerHTML = '';
+
+    const slaClass = d.sla_miss ? 'sla-miss' : 'sla-ok';
+    const slaText = d.sla_miss ? '❌ SLA MISS' : '✅ On Time';
+    const time = new Date(d.timestamp).toLocaleTimeString();
+
+    const entry = document.createElement('div');
+    entry.className = 'task-entry';
+    entry.innerHTML = `
+        <div class="task-row-top">
+            <span class="task-id">${d.task_id}</span>
+            <span class="task-time">${time}</span>
+        </div>
+        <div class="task-row-mid">
+            <span class="task-tag">📦 ${d.task_type}</span>
+            <span class="task-tag">🖥️ ${d.resource_id} (${d.resource_type})</span>
+            <span class="task-tag">⏱ ${d.latency}s</span>
+            <span class="task-tag">⚡ ${d.energy}J</span>
+            <span class="task-tag">💰 $${d.cost}</span>
+            <span class="task-tag ${slaClass}">${slaText}</span>
+        </div>
+        <div class="task-explain">${d.explanation}</div>
+    `;
+
+    feed.insertBefore(entry, feed.firstChild);
+
+    // Keep feed manageable
+    while (feed.children.length > 50) feed.removeChild(feed.lastChild);
+    document.getElementById('feedCount').textContent = taskCount + ' tasks';
+}
+
+function updateExplanation(d) {
+    const el = document.getElementById('lastExplanation');
+    let html = `<div class="explain-reason" style="border-left-color: var(--accent2); margin-bottom:8px; font-size:13px; color:var(--text);">${d.explanation}</div>`;
+    if (d.reasons && d.reasons.length > 0) {
+        for (const r of d.reasons) {
+            html += `<div class="explain-reason">${r}</div>`;
+        }
+    }
+    el.innerHTML = html;
+}
+
+// ── Speed Slider ──────────────────────────────────────────────
+const speedSlider = document.getElementById('speedSlider');
+const speedVal = document.getElementById('speedVal');
+speedSlider.addEventListener('input', async () => {
+    const v = parseFloat(speedSlider.value);
+    speedVal.textContent = v + 'x';
+    await fetch('/api/speed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ speed: v }),
+    });
+});
+
+// ── Pause / Resume ────────────────────────────────────────────
+let _simRunning = true;
+const pauseBtn = document.getElementById('pauseBtn');
+pauseBtn.addEventListener('click', async () => {
+    const resp = await fetch('/api/pause', { method: 'POST' });
+    const data = await resp.json();
+    _simRunning = data.running;
+    if (_simRunning) {
+        pauseBtn.textContent = '⏸ Pause';
+        pauseBtn.classList.remove('paused');
+    } else {
+        pauseBtn.textContent = '▶ Resume';
+        pauseBtn.classList.add('paused');
+    }
+});
+
+// ── Episode Toast ─────────────────────────────────────────────
+let _toastTimer = null;
+function showToast(msg) {
+    const el = document.getElementById('episodeToast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(() => el.classList.remove('show'), 4000);
+}
+
+// ── Load initial state ───────────────────────────────────────
+async function loadInitialState() {
+    try {
+        const resp = await fetch('/api/state');
+        const data = await resp.json();
+        if (data.global_metrics) updateKPIs(data.global_metrics);
+        if (data.resource_stats) updateResources(data.resource_stats);
+        if (data.recent_tasks) {
+            for (const t of data.recent_tasks) {
+                taskCount++;
+                addTaskToFeed(t);
+                updateCharts(t);
+            }
+        }
+    } catch (e) {
+        console.log('Initial load skipped:', e);
+    }
+}
+loadInitialState();
+</script>
+
+</body>
+</html>
