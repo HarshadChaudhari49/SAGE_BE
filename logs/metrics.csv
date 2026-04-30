@@ -1,6 +1,6 @@
 task_id,resource_id,start_time,finish_time,latency,energy,cost,deadline,sla_miss
 T0,R1,0,10.0,10.0,50.0,20.0,20,False
-T1,R1,0,10.0,10.0,50.0,20.0,20,False
+T1,R2,0,5.0,5.0,80.0,40.0,20,False
 T2,R1,0,10.0,10.0,50.0,20.0,20,False
 T3,R2,0,5.0,5.0,80.0,40.0,20,False
-T4,R2,0,5.0,5.0,80.0,40.0,20,False
+T4,R1,0,10.0,10.0,50.0,20.0,20,False
