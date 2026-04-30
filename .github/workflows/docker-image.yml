@@ -76,7 +76,12 @@ jobs:
     steps:
       - name: Trigger deploy hook
         if: env.DEPLOY_HOOK_URL != ''
-        run: curl -fsS -X POST "$DEPLOY_HOOK_URL"
+        run: |
+          if [[ "$DEPLOY_HOOK_URL" == http://* || "$DEPLOY_HOOK_URL" == https://* ]]; then
+            curl -fsS -X POST "$DEPLOY_HOOK_URL"
+          else
+            echo "DEPLOY_HOOK_URL is set but is not a valid http(s) URL. Skipping generic deploy hook."
+          fi
 
       - name: Skip deploy hook
         if: env.DEPLOY_HOOK_URL == ''
