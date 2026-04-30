@@ -358,6 +358,8 @@ def pause():
 # ═══════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+
     print("=" * 60)
     print("  SAGE Real-Time Simulation Dashboard")
     print("=" * 60)
@@ -372,9 +374,9 @@ if __name__ == "__main__":
     print("  ✓ Simulation started")
 
     print()
-    print("  ➜  Dashboard: http://localhost:5000")
-    print("  ➜  API state: http://localhost:5000/api/state")
-    print("  ➜  SSE stream: http://localhost:5000/api/stream")
+    print(f"  ➜  Dashboard: http://localhost:{port}")
+    print(f"  ➜  API state: http://localhost:{port}/api/state")
+    print(f"  ➜  SSE stream: http://localhost:{port}/api/stream")
     print()
 
-    app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
+    app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
