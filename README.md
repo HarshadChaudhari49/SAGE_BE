@@ -1,3 +1,9 @@
+---
+title: SAGE Scheduler Dashboard
+sdk: docker
+app_port: 7860
+---
+
 <p align="center">
   <h1 align="center">🧠 SAGE — Self-Adaptive Guided Explainable Scheduler</h1>
   <p align="center">

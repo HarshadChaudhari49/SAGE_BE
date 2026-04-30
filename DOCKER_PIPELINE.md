@@ -82,6 +82,51 @@ ghcr.io/harshadchaudhari49/sage_be:latest
 
 If `DEPLOY_HOOK_URL` is not configured, the workflow still builds and pushes the Docker image, but skips deployment.
 
+## Stage 6: Hugging Face Spaces Deployment
+
+The workflow can also deploy the project source to a Hugging Face Docker Space.
+
+Create a Hugging Face Space with:
+
+```text
+SDK: Docker
+Visibility: Public
+```
+
+Then create these GitHub repository secrets:
+
+```text
+HF_TOKEN
+HF_SPACE
+```
+
+`HF_TOKEN` is your Hugging Face access token.
+
+`HF_SPACE` should be:
+
+```text
+your-huggingface-username/your-space-name
+```
+
+Example:
+
+```text
+harshadchaudhari49/sage-be
+```
+
+After every push to `main`, GitHub Actions pushes the repository to the Hugging Face Space. Hugging Face then builds the Dockerfile and runs:
+
+```text
+python simulation_server.py
+```
+
+The Space uses the README metadata:
+
+```yaml
+sdk: docker
+app_port: 7860
+```
+
 ## Server Requirements Inside Docker
 
 The Docker container must have:
