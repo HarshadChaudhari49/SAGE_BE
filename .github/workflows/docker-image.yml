@@ -99,16 +99,16 @@ jobs:
       - name: Checkout repository
         if: env.HF_TOKEN != '' && env.HF_SPACE != ''
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Push source to Hugging Face Space
+      - name: Sync source to Hugging Face Space
         if: env.HF_TOKEN != '' && env.HF_SPACE != ''
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git remote add huggingface "https://HF:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE}"
-          git push --force huggingface HEAD:main
+        uses: huggingface/hub-sync@v0.1.0
+        with:
+          github_repo_id: ${{ github.repository }}
+          huggingface_repo_id: ${{ secrets.HF_SPACE }}
+          hf_token: ${{ secrets.HF_TOKEN }}
+          repo_type: space
+          space_sdk: docker
 
       - name: Skip Hugging Face deploy
         if: env.HF_TOKEN == '' || env.HF_SPACE == ''
