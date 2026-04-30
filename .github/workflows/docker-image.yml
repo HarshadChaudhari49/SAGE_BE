@@ -99,16 +99,28 @@ jobs:
       - name: Checkout repository
         if: env.HF_TOKEN != '' && env.HF_SPACE != ''
         uses: actions/checkout@v4
-
-      - name: Sync source to Hugging Face Space
-        if: env.HF_TOKEN != '' && env.HF_SPACE != ''
-        uses: huggingface/hub-sync@v0.1.0
         with:
-          github_repo_id: ${{ github.repository }}
-          huggingface_repo_id: ${{ secrets.HF_SPACE }}
-          hf_token: ${{ secrets.HF_TOKEN }}
-          repo_type: space
-          space_sdk: docker
+          fetch-depth: 0
+
+      - name: Install Git LFS and Git Xet
+        if: env.HF_TOKEN != '' && env.HF_SPACE != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git-lfs unzip
+          git lfs install
+          curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/huggingface/xet-core/refs/heads/main/git_xet/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Push source to Hugging Face Space with Xet
+        if: env.HF_TOKEN != '' && env.HF_SPACE != ''
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          git xet install
+          git xet --version
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote add huggingface "https://HF:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE}"
+          git push --force huggingface HEAD:main
 
       - name: Skip Hugging Face deploy
         if: env.HF_TOKEN == '' || env.HF_SPACE == ''
